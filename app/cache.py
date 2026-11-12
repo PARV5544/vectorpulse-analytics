@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import time
@@ -13,6 +14,7 @@ class AnalyticsCache:
         self.redis_url = redis_url
         self.ttl_seconds = ttl_seconds
         self._redis: Optional[aioredis.Redis] = None
+        self._redis_loop: Optional[asyncio.AbstractEventLoop] = None
         self._memory_store: Dict[str, Tuple[float, str]] = {}
         self.hits = 0
         self.misses = 0
@@ -24,6 +26,11 @@ class AnalyticsCache:
         return f"vp:{namespace}:{digest}"
 
     async def _get_redis(self) -> Optional[aioredis.Redis]:
+        loop = asyncio.get_running_loop()
+        if self._redis is not None and self._redis_loop is not loop:
+            self._redis = None
+            self._redis_loop = None
+
         if self._redis is None:
             try:
                 client = aioredis.from_url(
@@ -31,8 +38,10 @@ class AnalyticsCache:
                 )
                 await client.ping()
                 self._redis = client
+                self._redis_loop = loop
             except Exception:
                 self._redis = None
+                self._redis_loop = None
         return self._redis
 
     async def get(self, key: str) -> Optional[Any]:
